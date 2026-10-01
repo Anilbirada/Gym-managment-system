@@ -12,7 +12,6 @@
     },
     "android": {
       "package": "com.anilbiradar.forgeclub",
-      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#17211C",
         "foregroundImage": "./assets/android-icon-foreground.png",
