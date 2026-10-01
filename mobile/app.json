@@ -3,7 +3,7 @@
     "name": "RSR Gym",
     "slug": "forge-club",
     "owner": "anilbiradar",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.anilbiradar.forgeclub",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#17211C",
         "foregroundImage": "./assets/android-icon-foreground.png",
