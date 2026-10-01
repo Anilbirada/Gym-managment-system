@@ -29,9 +29,10 @@ type Payment = { id: number; name?: string; amount: number; currency: string; st
 type Dashboard = { members?: number; upcomingClasses?: number; checkInsToday?: number; monthlyRevenue?: number; visitsThisMonth?: number; upcomingBookings?: number };
 type Tab = 'home' | 'members' | 'classes' | 'billing' | 'progress' | 'account' | 'attendance';
 
+const RAILWAY_URL = 'https://web-production-d4ccc.up.railway.app/api';
 const CLOUDFLARE_URL = 'https://apnic-harris-jim-dash.trycloudflare.com/api';
 const LOCAL_WIFI_URL = 'http://192.168.1.10:4000/api';
-const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL || CLOUDFLARE_URL;
+const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL || RAILWAY_URL;
 
 const COLORS = {
   navy: '#0B1B3D',
@@ -264,8 +265,9 @@ export default function App() {
     setBusy(true);
     setNotice('');
 
-    // Try primary apiUrl first, then Cloudflare URL, then Wi-Fi URL
+    // Try primary apiUrl first, then Railway URL, then Cloudflare URL, then Wi-Fi URL
     const candidates = [apiUrl];
+    if (!candidates.includes(RAILWAY_URL)) candidates.push(RAILWAY_URL);
     if (!candidates.includes(CLOUDFLARE_URL)) candidates.push(CLOUDFLARE_URL);
     if (!candidates.includes(LOCAL_WIFI_URL)) candidates.push(LOCAL_WIFI_URL);
 
@@ -987,7 +989,7 @@ function ServerModal({
               onChangeUrl(txt);
               setTestResult(null);
             }}
-            placeholder="https://apnic-harris-jim-dash.trycloudflare.com/api"
+            placeholder="https://web-production-d4ccc.up.railway.app/api"
             placeholderTextColor="#94A3B8"
             autoCapitalize="none"
             style={styles.textInput}
@@ -998,21 +1000,21 @@ function ServerModal({
           <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
             <Pressable
               onPress={() => {
+                onChangeUrl(RAILWAY_URL);
+                setTestResult(null);
+              }}
+              style={styles.presetChip}
+            >
+              <Text style={styles.presetChipText}>🚂 Railway Cloud (24/7 Live)</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
                 onChangeUrl(CLOUDFLARE_URL);
                 setTestResult(null);
               }}
               style={styles.presetChip}
             >
               <Text style={styles.presetChipText}>☁️ Cloudflare Live</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                onChangeUrl('https://forge-gym-production.up.railway.app/api');
-                setTestResult(null);
-              }}
-              style={styles.presetChip}
-            >
-              <Text style={styles.presetChipText}>🚂 Railway Cloud</Text>
             </Pressable>
             <Pressable
               onPress={() => {
