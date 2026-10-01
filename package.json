@@ -2,10 +2,10 @@
   "name": "forge-gym-management",
   "private": true,
   "version": "1.0.0",
-  "main": "server/src/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server/src/index.js",
-    "server": "node server/src/index.js",
+    "start": "node index.js",
+    "server": "node index.js",
     "setup": "node server/src/setup.js",
     "mobile": "npm --prefix mobile start",
     "api": "npm --prefix server run dev",
