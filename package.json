@@ -2,7 +2,11 @@
   "name": "forge-gym-management",
   "private": true,
   "version": "1.0.0",
+  "main": "server/src/index.js",
   "scripts": {
+    "start": "node server/src/index.js",
+    "server": "node server/src/index.js",
+    "setup": "node server/src/setup.js",
     "mobile": "npm --prefix mobile start",
     "api": "npm --prefix server run dev",
     "db:start": "powershell -ExecutionPolicy Bypass -File ./scripts/start-db.ps1",
@@ -10,5 +14,13 @@
     "db:seed": "npm --prefix server run seed",
     "db:up": "docker compose up -d mysql",
     "db:down": "docker compose down"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.14.1"
   }
 }
