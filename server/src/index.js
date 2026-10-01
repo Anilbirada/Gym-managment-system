@@ -10,6 +10,57 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/', async (_req, res) => {
+  let dbStatus = 'checking';
+  try {
+    await pool.query('SELECT 1');
+    dbStatus = 'connected';
+  } catch (e) {
+    dbStatus = 'unavailable';
+  }
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSR Gym API · Online</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background: #0B1B3D; color: #F8FAFC; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+    .card { background: #FFFFFF; color: #0F172A; max-width: 520px; width: 100%; border-radius: 16px; padding: 32px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
+    .badge { display: inline-flex; align-items: center; gap: 6px; background: #ECFDF5; color: #059669; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-bottom: 16px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #10B981; }
+    h1 { font-size: 26px; font-weight: 900; color: #0F172A; margin-bottom: 8px; }
+    p { color: #64748B; font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
+    .status-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+    .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #F1F5F9; font-size: 13px; }
+    .row:last-child { border-bottom: none; }
+    .label { color: #64748B; font-weight: 600; }
+    .val { color: #0F172A; font-weight: 700; }
+    .btn { display: block; text-align: center; background: #1D68FE; color: #FFFFFF; text-decoration: none; padding: 12px; border-radius: 8px; font-weight: 700; font-size: 14px; transition: 0.2s; }
+    .btn:hover { background: #1555D6; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge"><div class="dot"></div> SERVER ONLINE · RAILWAY 24/7</div>
+    <h1>🏋️ RSR Gym Backend API</h1>
+    <p>Digital Solutions for a Healthier Tomorrow. The backend and MySQL database are active and servicing mobile clients.</p>
+    <div class="status-box">
+      <div class="row"><span class="label">API Status</span><span class="val" style="color:#10B981;">● Online</span></div>
+      <div class="row"><span class="label">MySQL Database</span><span class="val" style="color:#10B981;">● ${dbStatus === 'connected' ? 'Connected (Live)' : 'Reconnecting...'}</span></div>
+      <div class="row"><span class="label">Platform</span><span class="val">Railway Cloud</span></div>
+      <div class="row"><span class="label">Base API URL</span><span class="val"><code>/api</code></span></div>
+    </div>
+    <a href="/api/health" class="btn">Test Health Endpoint (/api/health) →</a>
+  </div>
+</body>
+</html>`);
+});
+
+app.get('/api', (_req, res) => res.redirect('/'));
+
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
