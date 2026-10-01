@@ -3,6 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "main": "index.js",
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node index.js",
     "server": "node index.js",
