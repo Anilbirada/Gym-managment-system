@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "RSR Gym",
+    "slug": "forge-club",
+    "owner": "anilbiradar",
+    "version": "1.0.3",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.anilbiradar.forgeclub",
+      "versionCode": 3,
+      "adaptiveIcon": {
+        "backgroundColor": "#17211C",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "cb0b7d7a-c6ea-4f54-9a7b-81376dd8219e"
+      }
+    }
+  }
+}

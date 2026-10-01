@@ -1,0 +1,14 @@
+{
+  "name": "forge-gym-management",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "mobile": "npm --prefix mobile start",
+    "api": "npm --prefix server run dev",
+    "db:start": "powershell -ExecutionPolicy Bypass -File ./scripts/start-db.ps1",
+    "db:setup": "npm --prefix server run setup",
+    "db:seed": "npm --prefix server run seed",
+    "db:up": "docker compose up -d mysql",
+    "db:down": "docker compose down"
+  }
+}
