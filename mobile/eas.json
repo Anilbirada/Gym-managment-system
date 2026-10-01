@@ -4,16 +4,34 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://192.168.1.5:4000/api"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://web-production-d4ccc.up.railway.app/api"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://web-production-d4ccc.up.railway.app/api"
+      },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "apk"
       }
     }
   }
+}
 }

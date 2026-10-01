@@ -64,9 +64,9 @@ app.get('/api', (_req, res) => res.redirect('/'));
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', database: 'connected' });
+    res.json({ success: true, status: 'ok', message: 'RSR Gym API is running', database: 'connected' });
   } catch {
-    res.status(503).json({ status: 'error', database: 'unavailable' });
+    res.status(503).json({ success: false, status: 'error', message: 'RSR Gym API database unavailable', database: 'unavailable' });
   }
 });
 

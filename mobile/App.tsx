@@ -29,10 +29,14 @@ type Payment = { id: number; name?: string; amount: number; currency: string; st
 type Dashboard = { members?: number; upcomingClasses?: number; checkInsToday?: number; monthlyRevenue?: number; visitsThisMonth?: number; upcomingBookings?: number };
 type Tab = 'home' | 'members' | 'classes' | 'billing' | 'progress' | 'account' | 'attendance';
 
-const RAILWAY_URL = 'https://web-production-d4ccc.up.railway.app/api';
-const CLOUDFLARE_URL = 'https://apnic-harris-jim-dash.trycloudflare.com/api';
-const LOCAL_WIFI_URL = 'http://192.168.1.10:4000/api';
-const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL || RAILWAY_URL;
+import API_URL, { PRODUCTION_API_URL, LOCAL_DEV_API_URL } from './src/config/api';
+import { request, checkBackendHealth, buildUrl, REQUEST_TIMEOUT_MS } from './src/services/apiClient';
+
+export type ConnectionState = 'CONNECTED' | 'CONNECTING' | 'OFFLINE' | 'SERVER_UNAVAILABLE';
+
+const RAILWAY_URL = PRODUCTION_API_URL;
+const LOCAL_WIFI_URL = LOCAL_DEV_API_URL;
+const DEFAULT_API_URL = API_URL;
 
 const COLORS = {
   navy: '#0B1B3D',
@@ -64,19 +68,11 @@ const initialPlans: Plan[] = [
 ];
 
 async function apiRequest<T>(base: string, path: string, token: string, options: RequestInit = {}): Promise<T> {
-  const url = `${base.replace(/\/$/, '')}${path}`;
-  const response = await fetch(url, {
+  return request<T>(path, {
+    baseUrl: base || DEFAULT_API_URL,
+    token,
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Bypass-Tunnel-Reminder': 'true',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `HTTP error ${response.status}`);
-  return payload as T;
 }
 
 function dateLabel(value: string) {
@@ -95,7 +91,8 @@ function initials(name: string) {
 
 export default function App() {
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
-  const [serverStatus, setServerStatus] = useState<'checking' | 'connected' | 'offline'>('checking');
+  const [connectionState, setConnectionState] = useState<ConnectionState>('CONNECTING');
+  const [connectionMessage, setConnectionMessage] = useState<string>('');
   const [showServerModal, setShowServerModal] = useState(false);
   const [customServerInput, setCustomServerInput] = useState(DEFAULT_API_URL);
 
@@ -129,59 +126,78 @@ export default function App() {
   const [paymentEmail, setPaymentEmail] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
 
-  // Test Server Connection
+  // Test Server Connection (Uses centralized health check)
   async function testServer(urlToTest: string): Promise<boolean> {
-    try {
-      const res = await fetch(`${urlToTest.replace(/\/$/, '')}/health`, {
-        headers: { 'Bypass-Tunnel-Reminder': 'true' },
-      });
-      const data = await res.json().catch(() => ({}));
-      return res.ok && data.status === 'ok';
-    } catch {
-      return false;
-    }
+    const health = await checkBackendHealth(urlToTest);
+    return health.ok;
   }
 
   // Initial check on mount
   useEffect(() => {
     let isMounted = true;
     (async () => {
-      setServerStatus('checking');
-      let ok = await testServer(apiUrl);
-      if (!ok && apiUrl !== LOCAL_WIFI_URL) {
-        // try local wifi as fallback
-        const wifiOk = await testServer(LOCAL_WIFI_URL);
-        if (wifiOk) {
+      setConnectionState('CONNECTING');
+      const health = await checkBackendHealth(apiUrl);
+      if (health.ok) {
+        if (isMounted) {
+          setConnectionState('CONNECTED');
+          setConnectionMessage('');
+        }
+        return;
+      }
+
+      // If initial URL fails and local Wi-Fi LAN IP is configured, check it
+      if (apiUrl !== LOCAL_DEV_API_URL) {
+        const localHealth = await checkBackendHealth(LOCAL_DEV_API_URL);
+        if (localHealth.ok) {
           if (isMounted) {
-            setApiUrl(LOCAL_WIFI_URL);
-            setCustomServerInput(LOCAL_WIFI_URL);
-            setServerStatus('connected');
+            setApiUrl(LOCAL_DEV_API_URL);
+            setCustomServerInput(LOCAL_DEV_API_URL);
+            setConnectionState('CONNECTED');
+            setConnectionMessage('');
           }
           return;
         }
       }
+
       if (isMounted) {
-        setServerStatus(ok ? 'connected' : 'offline');
+        setConnectionState('SERVER_UNAVAILABLE');
+        setConnectionMessage('Unable to connect to the RSR Gym server. Please check your internet connection or try again.');
       }
     })();
+
     return () => {
       isMounted = false;
     };
   }, [apiUrl]);
 
   // Connect and synchronize with live backend, clearing demo mode
-  async function connectAndSync(targetUrl = apiUrl, showAlert = true): Promise<boolean> {
+  // Will NEVER show raw network error alert popups
+  async function connectAndSync(targetUrl = apiUrl, manualTrigger = false): Promise<boolean> {
     setBusy(true);
+    setConnectionState('CONNECTING');
     try {
+      // Step 5: Test health endpoint before attempting operations
+      const health = await checkBackendHealth(targetUrl);
+      if (!health.ok) {
+        setConnectionState('SERVER_UNAVAILABLE');
+        setDemoMode(true);
+        setConnectionMessage('Unable to connect to the RSR Gym server. Please check your internet connection or try again.');
+        if (manualTrigger) {
+          Alert.alert('Connection Notice', 'Unable to connect to the RSR Gym server. Please check your internet connection or try again.');
+        }
+        return false;
+      }
+
       const loginEmail = user?.email || (role === 'admin' ? 'admin@forgegym.com' : 'member@forgegym.com');
-      const res = await fetch(`${targetUrl.replace(/\/$/, '')}/auth/login`, {
+      const data = await request<{ token: string; user: User }>('/auth/login', {
+        baseUrl: targetUrl,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
         body: JSON.stringify({ email: loginEmail, password: 'gym1234' }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.token) {
-        throw new Error(data.error || 'Server responded without authorization token');
+
+      if (!data || !data.token) {
+        throw new Error('Authentication failed');
       }
 
       setApiUrl(targetUrl);
@@ -189,24 +205,20 @@ export default function App() {
       setUser(data.user);
       setToken(data.token);
       setDemoMode(false);
-      setServerStatus('connected');
+      setConnectionState('CONNECTED');
+      setConnectionMessage('');
       setNotice('');
       await fetchAllData(data.token, targetUrl);
-      if (showAlert) {
-        Alert.alert('✅ Connected to MySQL Database!', `Successfully connected to live backend:\n${targetUrl}\n\nOffline mode disabled. Member list is now live!`);
+      if (manualTrigger) {
+        Alert.alert('✅ Connected to RSR Gym Server', `Successfully connected to live database at:\n${targetUrl}`);
       }
       return true;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (showAlert) {
-        Alert.alert(
-          'Connection Notice',
-          `Could not connect to ${targetUrl}:\n${msg}\n\nWould you like to open server settings to choose another preset?`,
-          [
-            { text: 'Server Settings', onPress: () => setShowServerModal(true) },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
+    } catch {
+      setConnectionState('SERVER_UNAVAILABLE');
+      setDemoMode(true);
+      setConnectionMessage('Unable to connect to the RSR Gym server. Please check your internet connection or try again.');
+      if (manualTrigger) {
+        Alert.alert('Connection Notice', 'Unable to connect to the RSR Gym server. Please check your internet connection or try again.');
       }
       return false;
     } finally {
@@ -263,37 +275,41 @@ export default function App() {
 
   async function signIn() {
     setBusy(true);
+    setConnectionState('CONNECTING');
     setNotice('');
 
-    // Try primary apiUrl first, then Railway URL, then Cloudflare URL, then Wi-Fi URL
+    // Try primary apiUrl first, then Railway production URL, then local LAN IP
     const candidates = [apiUrl];
-    if (!candidates.includes(RAILWAY_URL)) candidates.push(RAILWAY_URL);
-    if (!candidates.includes(CLOUDFLARE_URL)) candidates.push(CLOUDFLARE_URL);
-    if (!candidates.includes(LOCAL_WIFI_URL)) candidates.push(LOCAL_WIFI_URL);
+    if (!candidates.includes(PRODUCTION_API_URL)) candidates.push(PRODUCTION_API_URL);
+    if (!candidates.includes(LOCAL_DEV_API_URL)) candidates.push(LOCAL_DEV_API_URL);
 
     let loggedIn = false;
     let lastError = '';
 
     for (const candidate of candidates) {
       try {
-        const res = await fetch(`${candidate.replace(/\/$/, '')}/auth/login`, {
+        const health = await checkBackendHealth(candidate);
+        if (!health.ok) continue;
+
+        const data = await request<{ token: string; user: User }>('/auth/login', {
+          baseUrl: candidate,
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
           body: JSON.stringify({ email, password }),
         });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && data.token) {
+
+        if (data && data.token) {
           setApiUrl(candidate);
           setCustomServerInput(candidate);
           setUser(data.user);
           setToken(data.token);
           setDemoMode(false);
-          setServerStatus('connected');
+          setConnectionState('CONNECTED');
+          setConnectionMessage('');
           await fetchAllData(data.token, candidate);
           loggedIn = true;
           break;
-        } else if (data.error) {
-          lastError = data.error;
+        } else if ((data as any)?.error) {
+          lastError = (data as any).error;
         }
       } catch (e: any) {
         lastError = e?.message || 'Network error';
@@ -306,9 +322,11 @@ export default function App() {
         setUser({ id: isAdminUser ? 1 : 2, name: isAdminUser ? 'Jordan Lee' : 'Alex Morgan', email, role });
         setToken('');
         setDemoMode(true);
-        setNotice(`⚠️ Server unreachable. Running in offline demo mode. Tap reconnect banner to connect live.`);
+        setConnectionState('OFFLINE');
+        setConnectionMessage('Unable to connect to the RSR Gym server. Running in Offline Demo Mode. Tap Retry to connect live.');
       } else {
-        setNotice(`Could not connect: ${lastError || 'Invalid credentials'}. Demo password is gym1234.`);
+        setNotice(`Could not sign in: ${lastError || 'Invalid credentials'}. Demo password is gym1234.`);
+        setConnectionState('SERVER_UNAVAILABLE');
       }
     }
     setBusy(false);
@@ -543,9 +561,22 @@ export default function App() {
 
                 {/* Server Status Pill */}
                 <Pressable onPress={() => setShowServerModal(true)} style={styles.serverStatusPill}>
-                  <View style={[styles.serverStatusDot, serverStatus === 'connected' ? styles.dotGreen : serverStatus === 'checking' ? styles.dotYellow : styles.dotRed]} />
+                  <View
+                    style={[
+                      styles.serverStatusDot,
+                      connectionState === 'CONNECTED'
+                        ? styles.dotGreen
+                        : connectionState === 'CONNECTING'
+                        ? styles.dotYellow
+                        : styles.dotRed,
+                    ]}
+                  />
                   <Text style={styles.serverStatusText}>
-                    {serverStatus === 'connected' ? 'Database Online' : serverStatus === 'checking' ? 'Connecting...' : 'Tap for Server Settings'}
+                    {connectionState === 'CONNECTED'
+                      ? 'Live Cloud DB'
+                      : connectionState === 'CONNECTING'
+                      ? 'Connecting...'
+                      : 'Server Offline'}
                   </Text>
                 </Pressable>
               </View>
@@ -555,6 +586,20 @@ export default function App() {
             <View style={styles.loginCardSection}>
               <Text style={styles.loginHeading}>Sign in to RSR Gym</Text>
               <Text style={styles.loginSubheading}>Digital Solutions for a Healthier Tomorrow</Text>
+
+              {connectionState !== 'CONNECTED' && (
+                <View style={[styles.statusBanner, styles.bannerOffline, { borderRadius: 8, marginBottom: 12 }]}>
+                  <View style={{ flex: 1, paddingRight: 6 }}>
+                    <Text style={styles.bannerOfflineTitle}>⚠️ SERVER OFFLINE</Text>
+                    <Text style={styles.bannerOfflineMessage}>
+                      {connectionMessage || 'Unable to connect to the RSR Gym server. You can sign in with demo credentials or retry.'}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => connectAndSync(apiUrl, false)} style={styles.bannerRetryBtn}>
+                    <Text style={styles.bannerRetryBtnText}>↻ Retry</Text>
+                  </Pressable>
+                </View>
+              )}
 
               {/* Role Toggle */}
               <View style={styles.roleSegment}>
@@ -627,9 +672,14 @@ export default function App() {
             setCustomServerInput(newUrl);
             setShowServerModal(false);
             const ok = await testServer(newUrl);
-            setServerStatus(ok ? 'connected' : 'offline');
-            if (ok) Alert.alert('Connected!', `Successfully connected to MySQL database at:\n${newUrl}`);
-            else Alert.alert('Connection Warning', `Could not reach ${newUrl}. Ensure backend and tunnel/Wi-Fi are running.`);
+            setConnectionState(ok ? 'CONNECTED' : 'SERVER_UNAVAILABLE');
+            if (ok) {
+              setConnectionMessage('');
+              Alert.alert('Connected!', `Successfully connected to MySQL database at:\n${newUrl}`);
+            } else {
+              setConnectionMessage('Unable to connect to the RSR Gym server. Please check your internet connection or try again.');
+              Alert.alert('Connection Notice', `Could not reach ${newUrl}. Please verify the server is running.`);
+            }
           }}
           onTest={testServer}
         />
@@ -716,11 +766,13 @@ export default function App() {
         </View>
       )}
 
-      {demoMode ? (
-        <Pressable onPress={() => connectAndSync(apiUrl, true)} style={styles.demoBanner}>
-          <Text style={styles.demoBannerText}>⚠️ OFFLINE DEMO MODE · TAP TO CONNECT LIVE BACKEND</Text>
-        </Pressable>
-      ) : null}
+      <ConnectionStatusBanner
+        state={connectionState}
+        demoMode={demoMode}
+        message={connectionMessage}
+        onRetry={() => connectAndSync(apiUrl, false)}
+        onSettings={() => setShowServerModal(true)}
+      />
 
       {notice ? (
         <Pressable onPress={() => setNotice('')} style={styles.noticeBox}>
@@ -945,6 +997,58 @@ export default function App() {
   );
 }
 
+// --- CONNECTION STATUS BANNER ---
+function ConnectionStatusBanner({
+  state,
+  demoMode,
+  message,
+  onRetry,
+  onSettings,
+}: {
+  state: ConnectionState;
+  demoMode: boolean;
+  message?: string;
+  onRetry: () => void;
+  onSettings: () => void;
+}) {
+  if (state === 'CONNECTING') {
+    return (
+      <View style={[styles.statusBanner, styles.bannerConnecting]}>
+        <ActivityIndicator size="small" color="#1D68FE" style={{ marginRight: 8 }} />
+        <Text style={styles.bannerConnectingText}>Connecting to RSR Gym Server...</Text>
+      </View>
+    );
+  }
+
+  if (state === 'CONNECTED' && !demoMode) {
+    return (
+      <View style={[styles.statusBanner, styles.bannerConnected]}>
+        <View style={styles.greenDot} />
+        <Text style={styles.bannerConnectedText}>LIVE CONNECTED · Central MySQL Database</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.statusBanner, styles.bannerOffline]}>
+      <View style={{ flex: 1, paddingRight: 8 }}>
+        <Text style={styles.bannerOfflineTitle}>⚠️ {demoMode ? 'OFFLINE DEMO MODE' : 'SERVER UNAVAILABLE'}</Text>
+        <Text style={styles.bannerOfflineMessage}>
+          {message || 'Unable to connect to the RSR Gym server. Please check your internet connection or try again.'}
+        </Text>
+      </View>
+      <View style={styles.bannerActions}>
+        <Pressable onPress={onRetry} style={styles.bannerRetryBtn}>
+          <Text style={styles.bannerRetryBtnText}>↻ Retry</Text>
+        </Pressable>
+        <Pressable onPress={onSettings} style={styles.bannerSettingsBtn}>
+          <Text style={styles.bannerSettingsBtnText}>⚙️</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 // --- SERVER SETTINGS MODAL ---
 function ServerModal({
   visible,
@@ -969,7 +1073,7 @@ function ServerModal({
     setTestResult(null);
     const ok = await onTest(currentUrl);
     setTesting(false);
-    setTestResult(ok ? '✅ Server & MySQL Database are Online!' : '❌ Unreachable. Check if tunnel or server is running.');
+    setTestResult(ok ? '✅ Server & MySQL Database are Online!' : '❌ Unreachable. Check if server or internet is accessible.');
   }
 
   return (
@@ -1000,7 +1104,7 @@ function ServerModal({
           <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
             <Pressable
               onPress={() => {
-                onChangeUrl(RAILWAY_URL);
+                onChangeUrl(PRODUCTION_API_URL);
                 setTestResult(null);
               }}
               style={styles.presetChip}
@@ -1009,30 +1113,21 @@ function ServerModal({
             </Pressable>
             <Pressable
               onPress={() => {
-                onChangeUrl(CLOUDFLARE_URL);
+                onChangeUrl(LOCAL_DEV_API_URL);
                 setTestResult(null);
               }}
               style={styles.presetChip}
             >
-              <Text style={styles.presetChipText}>☁️ Cloudflare Live</Text>
+              <Text style={styles.presetChipText}>📶 Local Wi-Fi (192.168.1.5)</Text>
             </Pressable>
             <Pressable
               onPress={() => {
-                onChangeUrl(LOCAL_WIFI_URL);
+                onChangeUrl('http://10.0.2.2:4000/api');
                 setTestResult(null);
               }}
               style={styles.presetChip}
             >
-              <Text style={styles.presetChipText}>📶 Local Wi-Fi</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                onChangeUrl('http://localhost:4000/api');
-                setTestResult(null);
-              }}
-              style={styles.presetChip}
-            >
-              <Text style={styles.presetChipText}>💻 Localhost</Text>
+              <Text style={styles.presetChipText}>📱 Android Emulator</Text>
             </Pressable>
           </View>
 
@@ -2054,4 +2149,88 @@ const styles = StyleSheet.create({
   testBtnText: { color: '#1D68FE', fontWeight: '800', fontSize: 13 },
   saveBtn: { flex: 1, height: 46, borderRadius: 8, backgroundColor: '#1D68FE', alignItems: 'center', justifyContent: 'center' },
   saveBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
+
+  // Status Banner
+  statusBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bannerConnecting: {
+    backgroundColor: '#EFF6FF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#BFDBFE',
+    justifyContent: 'center',
+  },
+  bannerConnectingText: {
+    color: '#1D4ED8',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  bannerConnected: {
+    backgroundColor: '#ECFDF5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#A7F3D0',
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  bannerConnectedText: {
+    color: '#065F46',
+    fontWeight: '700',
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  greenDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+    marginRight: 6,
+  },
+  bannerOffline: {
+    backgroundColor: '#FFFBEB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FDE68A',
+  },
+  bannerOfflineTitle: {
+    color: '#92400E',
+    fontWeight: '800',
+    fontSize: 11,
+    marginBottom: 2,
+    letterSpacing: 0.5,
+  },
+  bannerOfflineMessage: {
+    color: '#78350F',
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  bannerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bannerRetryBtn: {
+    backgroundColor: '#D97706',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  bannerRetryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 11,
+  },
+  bannerSettingsBtn: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  bannerSettingsBtnText: {
+    fontSize: 12,
+  },
 });
